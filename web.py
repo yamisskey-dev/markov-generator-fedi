@@ -87,11 +87,11 @@ try:
     if secret_key and secret_key != 'dev-secret-key-change-in-production-12345':
         app.secret_key = secret_key
     else:
-        # 開発環境用のランダムキー（本番環境ではconfig.pyで固定キーを設定してください）
-        app.secret_key = bytes(bytearray(random.getrandbits(8) for _ in range(32)))
+        # 開発環境用の固定キー（本番環境ではconfig.pyで固定キーを設定してください）
+        app.secret_key = 'dev-secret-key-change-in-production-12345'
 except AttributeError:
-    # 開発環境用のランダムキー（本番環境ではconfig.pyで固定キーを設定してください）
-    app.secret_key = bytes(bytearray(random.getrandbits(8) for _ in range(32)))
+    # 開発環境用の固定キー（本番環境ではconfig.pyで固定キーを設定してください）
+    app.secret_key = 'dev-secret-key-change-in-production-12345'
 app.permanent_session_lifetime = timedelta(hours=1)
 
 request_session = requests.Session()

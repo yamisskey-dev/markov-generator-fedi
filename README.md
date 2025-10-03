@@ -34,24 +34,16 @@ python3 -m unidic download
 cp config.py.example config.py
 ```
 
-`config.py`を編集して、以下の設定を行ってください：
+`config.py`は既に開発環境用の設定が含まれています。本番環境では以下の設定を変更してください：
 
 ```python
-# Webサーバーの待ち受けポート
+# 本番環境での推奨設定
 PORT = 8888
-
-# デバッグモード（本番環境ではFalse推奨）
-DEBUG = True
-
-# MeCab辞書のパス（必要に応じて）
-MECAB_DICDIR = '/usr/lib/mecab/dic/unidic'
-MECAB_RC = '/etc/mecabrc'
-
-# Sentry DSN（エラー監視用、オプション）
-SENTRY_DSN = 'https://your-sentry-dsn@sentry.io/project-id'
-
-# セッションキー（本番環境では固定の秘密鍵を設定）
-SECRET_KEY = 'your-secret-key-here'
+DEBUG = False  # 本番環境ではFalseに設定
+SECRET_KEY = 'your-production-secret-key-here'  # 本番環境では固定の秘密鍵を設定
+MECAB_DICDIR = '/usr/lib/mecab/dic/unidic'  # 必要に応じて
+MECAB_RC = '/etc/mecabrc'  # 必要に応じて
+SENTRY_DSN = 'https://your-sentry-dsn@sentry.io/project-id'  # オプション
 ```
 
 ### 3. データベースの初期化

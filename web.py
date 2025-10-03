@@ -16,6 +16,8 @@ import re
 import MeCab
 import markovify
 import config
+from database import db_manager
+from markov_model import create_markov_model_by_multiline, format_text, generate_text
 import requests
 import uuid
 import hashlib
@@ -50,49 +52,9 @@ def dict_factory(cursor, row):
        d[col[0]] = row[idx]
    return d
 
-def format_text(t):
-    t = t.replace('　', ' ')  # Full width spaces
-    # t = re.sub(r'([。．！？…]+)', r'\1\n', t)  # \n after ！？
-    t = re.sub(r'(.+。) (.+。)', r'\1 \2\n', t)
-    t = re.sub(r'\n +', '\n', t)  # Spaces
-    t = re.sub(r'([。．！？…])\n」', r'\1」 \n', t)  # \n before 」
-    t = re.sub(r'\n +', '\n', t)  # Spaces
-    t = re.sub(r'\n+', r'\n', t).rstrip('\n')  # Empty lines
-    t = re.sub(r'\n +', '\n', t)  # Spaces
-    t = re.sub(r'(http|ftp|https):\/\/[\w\-_]+(\.[\w\-_]+)+([\w\-\.,@?^=%&amp;:/~\+#]*[\w\-\@?^=%&amp;/~\+#])?', '', t) # URL
-    return t
-
-def create_markov_model_by_multiline(lines: list):
-    # MeCabで形態素解析
-    parsed_text = []
-    mecab_options = ['-Owakati']
-    try:
-        if getattr(config, 'MECAB_DICDIR'):
-            mecab_options.append(f'-d{config.MECAB_DICDIR}')
-    except:
-        pass
-
-    try:
-        if getattr(config, 'MECAB_RC'):
-            mecab_options.append(f'-r{config.MECAB_RC}')
-    except:
-        pass
-    
-    for line in lines:
-        parsed_text.append(MeCab.Tagger(' '.join(mecab_options)).parse(line))
-    
-    # モデル作成
-    try:
-        text_model = markovify.NewlineText('\n'.join(parsed_text), state_size=2)
-    except:
-        raise Exception('<meta name="viewport" content="width=device-width">モデル作成に失敗しました。学習に必要な投稿数が不足している可能性があります。', 500)
-
-    return text_model
 
 USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; Markov-Generator-Fedi) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
 
-db = sqlite3.connect('markov.db', check_same_thread=False)
-db.row_factory = dict_factory
 
 # job_statusの使い方
 # {
@@ -119,8 +81,17 @@ except AttributeError:
     pass
 
 app = Flask(__name__)
-# ランダムバイトから鍵生成
-app.secret_key = bytes(bytearray(random.getrandbits(8) for _ in range(32)))
+# セッションキーの設定
+try:
+    secret_key = config.SECRET_KEY
+    if secret_key and secret_key != 'dev-secret-key-change-in-production-12345':
+        app.secret_key = secret_key
+    else:
+        # 開発環境用の固定キー（本番環境ではconfig.pyで固定キーを設定してください）
+        app.secret_key = 'dev-secret-key-change-in-production-12345'
+except AttributeError:
+    # 開発環境用の固定キー（本番環境ではconfig.pyで固定キーを設定してください）
+    app.secret_key = 'dev-secret-key-change-in-production-12345'
 app.permanent_session_lifetime = timedelta(hours=1)
 
 request_session = requests.Session()
@@ -359,14 +330,7 @@ def login_msk_callback():
             job_status[job_id]['progress'] = 90
 
             # モデル保存
-            try:
-                cur = db.cursor()
-                cur.execute('DELETE FROM model_data WHERE acct = ?', (data['acct'],))
-                cur.execute('INSERT INTO model_data(acct, data, allow_generate_by_other) VALUES (?, ?, ?)', (data['acct'], text_model.to_json(), int(allowGenerateByOther == 'on')))
-                cur.close()
-                db.commit()
-            except:
-                print(traceback.format_exc())
+            if not db_manager.save_model_data(data['acct'], text_model.to_json(), allowGenerateByOther == 'on'):
                 job_status[job_id] = {
                     'completed': True,
                     'error': 'Failed to save model',
@@ -492,14 +456,7 @@ def login_msk_callback():
             job_status[job_id]['progress'] = 90
 
             # モデル保存
-            try:
-                cur = db.cursor()
-                cur.execute('DELETE FROM model_data WHERE acct = ?', (data['acct'],))
-                cur.execute('INSERT INTO model_data(acct, data, allow_generate_by_other) VALUES (?, ?, ?)', (data['acct'], text_model.to_json(), int(allowGenerateByOther == 'on')))
-                cur.close()
-                db.commit()
-            except:
-                print(traceback.format_exc())
+            if not db_manager.save_model_data(data['acct'], text_model.to_json(), allowGenerateByOther == 'on'):
                 job_status[job_id] = {
                     'completed': True,
                     'error': 'Failed to save model to database'
@@ -590,10 +547,7 @@ def generate_do():
         if acct.startswith('@'):
             acct = acct[1:]
 
-        cur = db.cursor()
-        cur.execute('SELECT data FROM model_data WHERE acct = ?', (acct,))
-        data = cur.fetchone()
-        cur.close()
+        data = db_manager.get_model_data(acct)
 
         if not data:
             return render_template('generate.html', internal_error=True, internal_error_message='学習データが見つかりませんでした。 <a href="/logout">ログアウト</a>してから再度ログインしてください。', text='', splited_text=[], acct=acct, share_text='', min_words=min_words)
@@ -602,58 +556,30 @@ def generate_do():
         if acct.startswith('@'):
             acct = acct[1:]
 
-        cur = db.cursor()
-        cur.execute('SELECT allow_generate_by_other FROM model_data WHERE acct = ?', (acct,))
-        data = cur.fetchone()
-        if not data:
+        permissions = db_manager.get_model_permissions(acct)
+        if not permissions:
             return render_template('generate.html', internal_error=True, internal_error_message=f'{acct} の学習データは見つかりませんでした。', text='', splited_text=[], acct=acct, share_text='', min_words=min_words)
         
         print(session.get('acct'), acct)
         
-        allow_generate_by_other = bool(data['allow_generate_by_other'])
+        allow_generate_by_other = bool(permissions['allow_generate_by_other'])
         if (session.get('acct') != acct) and (not allow_generate_by_other):
             return render_template('generate.html', internal_error=True, internal_error_message='このユーザーは他のユーザーからの文章生成を許可していません。', text='', splited_text=[], acct=acct, share_text='', min_words=min_words)
 
-        cur = db.cursor()
-        cur.execute('SELECT data FROM model_data WHERE acct = ?', (acct,))
-        data = cur.fetchone()
-        cur.close()
-
-    text_model = markovify.Text.from_json(data['data'])
-    markov_params = dict(
-        tries=100,
-        min_words=min_words
-    )
-
-    loop_count = 1
-    sw_failed = False
-    if startswith:
-        loop_count = 256
+        data = db_manager.get_model_data(acct)
 
     st = time.perf_counter()
-
-    try:
-        if startswith:
-            gen_text = text_model.make_sentence_with_start(startswith, **markov_params)
-        else:
-            gen_text = text_model.make_sentence(**markov_params)
-        text = gen_text.replace(' ', '')
-        splited_text = ['<span class="badge bg-info">' + html.escape(t) + '</span>' for t in gen_text.split(' ')]
-    except AttributeError:
-        text = None
-    except markovify.text.ParamError:
-        text = None
-        if startswith:
-            sw_failed = True
-    except KeyError:
-        text = None
-        if startswith:
-            sw_failed = True
-
+    
+    text, gen_text, failed, sw_failed = generate_text(data['data'], min_words, startswith)
     
     et = time.perf_counter()
     proc_time = (et - st) * 1000
     sw_suggest = ''
+    
+    if gen_text:
+        splited_text = ['<span class="badge bg-info">' + html.escape(t) + '</span>' for t in gen_text.split(' ')]
+    else:
+        splited_text = []
     
     if sw_failed:
         m = json.loads(data['data'])
@@ -689,18 +615,11 @@ def my_delete_model_data():
     if request.form.get('agreeDelete') != 'on':
         return 'Canceled.<br><a href="/">Top</a>'
     
-    cur = db.cursor()
-    cur.execute('SELECT COUNT(*) FROM model_data WHERE acct = ?', (session['acct'],))
-    res = cur.fetchone()
-    cur.close()
-
-    if res == 0:
+    if not db_manager.model_exists(session['acct']):
         return 'No data found<br><a href="/">Top</a>'
 
-    cur = db.cursor()
-    cur.execute('DELETE FROM model_data WHERE acct = ?', (session['acct'],))
-    cur.close()
-    db.commit()
+    if not db_manager.delete_model_data(session['acct']):
+        return 'Failed to delete data<br><a href="/">Top</a>'
 
     session['hasModelData'] = False
 

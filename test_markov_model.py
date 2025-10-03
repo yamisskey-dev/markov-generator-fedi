@@ -2,10 +2,20 @@
 マルコフモデル機能のテスト
 """
 import unittest
-from markov_model import format_text, create_markov_model_by_multiline, generate_text
+
+try:
+    from markov_model import format_text, create_markov_model_by_multiline, generate_text
+    MECAB_AVAILABLE = True
+except ImportError:
+    MECAB_AVAILABLE = False
 
 
 class TestMarkovModel(unittest.TestCase):
+    
+    def setUp(self):
+        """テスト前の準備"""
+        if not MECAB_AVAILABLE:
+            self.skipTest("MeCab not available")
     
     def test_format_text(self):
         """テキスト整形機能のテスト"""

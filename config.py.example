@@ -1,0 +1,24 @@
+# 設定ファイルのテンプレート
+# このファイルを config.py にコピーして使用してください
+
+# Webサーバーの待ち受けポート
+PORT = 8888
+
+# デバッグモードで起動するか (本番環境ではFalse推奨)
+DEBUG = True
+
+# MeCabで使用する辞書があるディレクトリの絶対パス
+# 例: MECAB_DICDIR = '/usr/lib/mecab/dic/unidic'
+MECAB_DICDIR = None
+
+# mecabrcの絶対パス
+# 例: MECAB_RC = '/etc/mecabrc'
+MECAB_RC = None
+
+# Sentry DSN (エラー監視用、オプション)
+# 例: SENTRY_DSN = 'https://your-sentry-dsn@sentry.io/project-id'
+SENTRY_DSN = None
+
+# セッションキー (本番環境では固定の秘密鍵を設定してください)
+# 例: SECRET_KEY = 'your-secret-key-here'
+SECRET_KEY = None

@@ -69,13 +69,13 @@ def create_markov_model_by_multiline(lines: list):
     try:
         if getattr(config, 'MECAB_DICDIR'):
             mecab_options.append(f'-d{config.MECAB_DICDIR}')
-    except:
+    except AttributeError:
         pass
 
     try:
         if getattr(config, 'MECAB_RC'):
             mecab_options.append(f'-r{config.MECAB_RC}')
-    except:
+    except AttributeError:
         pass
     
     for line in lines:
@@ -84,7 +84,8 @@ def create_markov_model_by_multiline(lines: list):
     # モデル作成
     try:
         text_model = markovify.NewlineText('\n'.join(parsed_text), state_size=2)
-    except:
+    except Exception as e:
+        print(f"Markov model creation failed: {e}")
         raise Exception('<meta name="viewport" content="width=device-width">モデル作成に失敗しました。学習に必要な投稿数が不足している可能性があります。', 500)
 
     return text_model
@@ -119,8 +120,12 @@ except AttributeError:
     pass
 
 app = Flask(__name__)
-# ランダムバイトから鍵生成
-app.secret_key = bytes(bytearray(random.getrandbits(8) for _ in range(32)))
+# セッションキーの設定
+try:
+    app.secret_key = config.SECRET_KEY
+except AttributeError:
+    # 開発環境用のランダムキー（本番環境ではconfig.pyで固定キーを設定してください）
+    app.secret_key = bytes(bytearray(random.getrandbits(8) for _ in range(32)))
 app.permanent_session_lifetime = timedelta(hours=1)
 
 request_session = requests.Session()
@@ -365,7 +370,8 @@ def login_msk_callback():
                 cur.execute('INSERT INTO model_data(acct, data, allow_generate_by_other) VALUES (?, ?, ?)', (data['acct'], text_model.to_json(), int(allowGenerateByOther == 'on')))
                 cur.close()
                 db.commit()
-            except:
+            except Exception as e:
+                print(f"Failed to save model: {e}")
                 print(traceback.format_exc())
                 job_status[job_id] = {
                     'completed': True,
@@ -498,7 +504,8 @@ def login_msk_callback():
                 cur.execute('INSERT INTO model_data(acct, data, allow_generate_by_other) VALUES (?, ?, ?)', (data['acct'], text_model.to_json(), int(allowGenerateByOther == 'on')))
                 cur.close()
                 db.commit()
-            except:
+            except Exception as e:
+                print(f"Failed to save model to database: {e}")
                 print(traceback.format_exc())
                 job_status[job_id] = {
                     'completed': True,

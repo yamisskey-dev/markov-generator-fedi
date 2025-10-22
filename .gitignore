@@ -1,4 +1,3 @@
-config.py
 __pycache__
 *.json
 *.db
@@ -6,3 +5,4 @@ venv/*
 
 # ただしrequirements.txtは含める
 !requirements.txt
+# config.pyは本番環境用のため含める

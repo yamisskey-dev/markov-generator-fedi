@@ -30,9 +30,6 @@ test_*.py
 # ログファイル
 *.log
 
-# 環境設定（本番環境では別途設定）
-config.py
-
 # その他
 .DS_Store
 README.md

@@ -14,23 +14,16 @@ primary_region = "nrt"  # 東京リージョン
   auto_start_machines = true
   min_machines_running = 0  # 無料枠節約のため、アイドル時は停止
 
-[http_service.checks]
-  [http_service.checks.alive]
-    type = "http"
-    method = "GET"
-    path = "/"
-    interval = "30s"
-    timeout = "5s"
+[[http_service.checks]]
+  grace_period = "10s"
+  interval = "30s"
+  method = "GET"
+  timeout = "5s"
+  path = "/"
 
-[[vm]]
-  cpu_kind = "shared"
-  cpus = 1
-  memory_mb = 512  # 無料枠内で動作
-
-[mounts]
+[[mounts]]
   source = "markov_data"
   destination = "/data"
-  initial_size = "1gb"  # SQLite用の永続ボリューム
 
 [env]
   PORT = "8888"

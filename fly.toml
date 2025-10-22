@@ -1,0 +1,39 @@
+# fly.toml app configuration file generated for markov-generator-fedi
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+
+app = "markov-generator-fedi"
+primary_region = "nrt"  # 東京リージョン
+
+[build]
+
+[http_service]
+  internal_port = 8888
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 0  # 無料枠節約のため、アイドル時は停止
+
+[http_service.checks]
+  [http_service.checks.alive]
+    type = "http"
+    method = "GET"
+    path = "/"
+    interval = "30s"
+    timeout = "5s"
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 512  # 無料枠内で動作
+
+[mounts]
+  source = "markov_data"
+  destination = "/data"
+  initial_size = "1gb"  # SQLite用の永続ボリューム
+
+[env]
+  PORT = "8888"
+  DEBUG = "False"
+  # 本番環境の設定は fly secrets set コマンドで設定してください
+  # 例: fly secrets set SECRET_KEY=your-secret-key-here

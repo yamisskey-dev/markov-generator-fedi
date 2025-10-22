@@ -1,14 +1,24 @@
 import sqlite3, os
 
+# データベースファイルのパス（環境変数で変更可能）
+DB_PATH = os.environ.get('DB_PATH', '/data/markov.db')
+
+# データディレクトリが存在しない場合は作成
+db_dir = os.path.dirname(DB_PATH)
+if db_dir and not os.path.exists(db_dir):
+    os.makedirs(db_dir, exist_ok=True)
+
 try:
-    os.remove('markov.db')
+    os.remove(DB_PATH)
+except FileNotFoundError:
+    print(f'{DB_PATH} not found, creating new database.')
 except PermissionError:
-    print('Cannot remove markov.db because file is in use or no permission.')
+    print(f'Cannot remove {DB_PATH} because file is in use or no permission.')
 except Exception as e:
-    print(f'Cannot remove markov.db: {e!r}')
+    print(f'Cannot remove {DB_PATH}: {e!r}')
     pass
 
-db = sqlite3.connect('markov.db')
+db = sqlite3.connect(DB_PATH)
 
 print('Initalizing database...', end='')
 

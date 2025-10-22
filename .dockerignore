@@ -1,0 +1,39 @@
+# Git関連
+.git
+.gitignore
+.github
+
+# Python関連
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv
+
+# テスト関連
+.pytest_cache
+*.db
+*.db-journal
+test_*.py
+
+# IDE関連
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# ログファイル
+*.log
+
+# 環境設定（本番環境では別途設定）
+config.py
+
+# その他
+.DS_Store
+README.md
+LICENSE

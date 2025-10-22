@@ -1,0 +1,226 @@
+/// @ 0.19.0
+
+// マルコフ連鎖による文章生成 for Misskey
+// このスクリプトは、あなたのノートを学習して似たような文章を生成します
+
+// ============================================
+// 設定
+// ============================================
+
+// 取得するノート数（1-100）
+let FETCH_LIMIT = 100
+
+// マルコフ連鎖の次数（2または3を推奨）
+let MARKOV_ORDER = 2
+
+// 生成する文章の最大長（文字数）
+let MAX_LENGTH = 100
+
+// 最小の文章長（文字数）
+let MIN_LENGTH = 10
+
+// ============================================
+// ユーティリティ関数
+// ============================================
+
+// テキストのクリーニング
+@clean_text(text) {
+	var cleaned = text
+
+	// URLを除去
+	cleaned = cleaned.replace("http://", "")
+	cleaned = cleaned.replace("https://", "")
+
+	// メンションを除去
+	var words = cleaned.split(" ")
+	var result = []
+	each let word, words {
+		if !word.starts_with("@") {
+			result.push(word)
+		}
+	}
+	cleaned = result.join(" ")
+
+	// ハッシュタグを除去
+	words = cleaned.split(" ")
+	result = []
+	each let word, words {
+		if !word.starts_with("#") {
+			result.push(word)
+		}
+	}
+	cleaned = result.join(" ")
+
+	// 改行を空白に変換
+	cleaned = cleaned.replace(Str:lf, " ")
+
+	// 連続する空白を1つに
+	loop {
+		let before = cleaned
+		cleaned = cleaned.replace("  ", " ")
+		if before == cleaned break
+	}
+
+	return cleaned.trim()
+}
+
+// テキストを単語に分割
+@tokenize(text) {
+	// 日本語の場合は文字単位で分割
+	// 英語の場合はスペースで分割
+
+	// まずスペースで分割してみる
+	let words = text.split(" ")
+
+	// 各単語をさらに文字単位に分割（日本語対応）
+	var tokens = []
+	each let word, words {
+		if word.len > 0 {
+			// 単語が長い場合は文字単位に分割
+			let chars = word.to_arr()
+			each let char, chars {
+				tokens.push(char)
+			}
+			// スペースも区切りとして追加
+			tokens.push(" ")
+		}
+	}
+
+	return tokens
+}
+
+// マルコフチェーンモデルを構築
+@build_markov_model(notes) {
+	var chain = {}
+
+	each let note, notes {
+		if Core:type(note) == "obj" {
+			let text = if note["text"] != null note["text"] else ""
+
+			if text.len > 0 {
+				let cleaned = clean_text(text)
+				let tokens = tokenize(cleaned)
+
+				// マルコフチェーンの構築
+				for let i, (tokens.len - MARKOV_ORDER) {
+					// キーの作成
+					var key_parts = []
+					for let j, MARKOV_ORDER {
+						key_parts.push(tokens.at(i + j))
+					}
+					let key = key_parts.join("")
+
+					// 次の文字
+					let next = tokens.at(i + MARKOV_ORDER)
+
+					// チェーンに追加
+					if Obj:has(chain, key) {
+						let values = chain[key]
+						values.push(next)
+						chain[key] = values
+					} else {
+						chain[key] = [next]
+					}
+				}
+			}
+		}
+	}
+
+	return chain
+}
+
+// マルコフチェーンから文章を生成
+@generate_text(chain) {
+	// チェーンが空の場合
+	let keys = Obj:keys(chain)
+	if keys.len == 0 {
+		return "学習データが不足しています。もっとノートを投稿してください！"
+	}
+
+	// ランダムな開始点を選択
+	let start_key = keys.at(Math:rnd(0, keys.len - 1))
+
+	var result = start_key
+	var current_key = start_key
+
+	// 文章を生成
+	for let i, MAX_LENGTH {
+		if !Obj:has(chain, current_key) break
+
+		let candidates = chain[current_key]
+		if candidates.len == 0 break
+
+		// ランダムに次の文字を選択
+		let next = candidates.at(Math:rnd(0, candidates.len - 1))
+		result = `{result}{next}`
+
+		// 次のキーを作成
+		let result_chars = result.to_arr()
+		if result_chars.len >= MARKOV_ORDER {
+			var key_parts = []
+			for let j, MARKOV_ORDER {
+				key_parts.push(result_chars.at(result_chars.len - MARKOV_ORDER + j))
+			}
+			current_key = key_parts.join("")
+		} else {
+			break
+		}
+
+		// 句点で終わったら終了
+		if next == "。" || next == "！" || next == "？" || next == "." || next == "!" || next == "?" {
+			if result.len >= MIN_LENGTH {
+				break
+			}
+		}
+	}
+
+	return result
+}
+
+// ============================================
+// メイン処理
+// ============================================
+
+<: "マルコフ連鎖文章生成スクリプトを起動します..."
+<: ""
+
+// ノートを取得
+<: `ノートを取得中... (最大{FETCH_LIMIT}件)`
+
+let notes_response = Mk:api("notes", {
+	limit: FETCH_LIMIT
+})
+
+// エラーチェック
+if Core:type(notes_response) == "error" {
+	<: "エラー: ノートの取得に失敗しました"
+	<: `詳細: {notes_response.name}`
+	Core:abort("ノートの取得に失敗")
+}
+
+<: `{notes_response.len}件のノートを取得しました`
+<: ""
+
+// マルコフモデルを構築
+<: "マルコフチェーンモデルを構築中..."
+
+let markov_chain = build_markov_model(notes_response)
+let chain_size = Obj:keys(markov_chain).len
+
+<: `{chain_size}個の状態を学習しました`
+<: ""
+
+// 文章を生成
+<: "文章を生成中..."
+<: ""
+
+for let i, 5 {
+	let generated = generate_text(markov_chain)
+	<: `[{i + 1}] {generated}`
+	<: ""
+}
+
+<: "生成完了！"
+<: ""
+<: "このスクリプトは、あなたの過去のノートから学習して文章を生成しています。"
+<: "生成された文章は、あなたの文体を模倣していますが、実際の発言ではありません。"

@@ -1,0 +1,301 @@
+/// @ 0.19.0
+
+// 高度なマルコフ連鎖文章生成 for Misskey
+// より自然な文章を生成するバージョン
+
+// ============================================
+// 設定
+// ============================================
+
+var CONFIG = {
+	fetch_limit: 100        // 取得するノート数
+	markov_order: 2         // N-gramのN（2または3を推奨）
+	max_length: 100         // 生成する最大長
+	min_length: 10          // 生成する最小長
+	generate_count: 5       // 生成する文章の数
+	use_word_tokens: true   // 単語単位で処理するか
+}
+
+// ============================================
+// ユーティリティ
+// ============================================
+
+@log(msg) {
+	<: msg
+}
+
+@clean_note_text(text) {
+	var cleaned = text
+
+	// URLを除去（簡易版）
+	var parts = cleaned.split(" ")
+	var filtered = []
+
+	each let part, parts {
+		var should_keep = true
+
+		// URLっぽいものを除外
+		if part.incl("http") || part.incl("https") || part.incl("://") {
+			should_keep = false
+		}
+
+		// メンション除外
+		if part.starts_with("@") && part.len > 1 {
+			should_keep = false
+		}
+
+		// ハッシュタグは含める（#は除去）
+		if part.starts_with("#") && part.len > 1 {
+			part = part.slice(1, part.len)
+		}
+
+		if should_keep && part.len > 0 {
+			filtered.push(part)
+		}
+	}
+
+	cleaned = filtered.join(" ")
+
+	// 改行を空白に
+	cleaned = cleaned.replace(Str:lf, " ")
+
+	// 連続空白を1つに
+	var prev = ""
+	loop {
+		prev = cleaned
+		cleaned = cleaned.replace("  ", " ")
+		if prev == cleaned break
+	}
+
+	return cleaned.trim()
+}
+
+// トークン化（文字または単語単位）
+@tokenize(text, use_words) {
+	if use_words {
+		// 単語単位
+		return text.split(" ")
+	} else {
+		// 文字単位
+		return text.to_arr()
+	}
+}
+
+// N-gramチェーンの構築
+@build_chain(tokens, order) {
+	var chain = {}
+
+	if tokens.len <= order {
+		return chain
+	}
+
+	for let i, (tokens.len - order) {
+		// キーを作成
+		var key_parts = []
+		for let j, order {
+			let token = tokens.at(i + j)
+			if token != null {
+				key_parts.push(token)
+			}
+		}
+
+		if key_parts.len == order {
+			let key = key_parts.join("│")
+			let next_token = tokens.at(i + order)
+
+			if next_token != null {
+				if Obj:has(chain, key) {
+					let arr = chain[key]
+					arr.push(next_token)
+				} else {
+					chain[key] = [next_token]
+				}
+			}
+		}
+	}
+
+	return chain
+}
+
+// チェーンをマージ
+@merge_chains(chain1, chain2) {
+	var result = chain1
+	let keys = Obj:keys(chain2)
+
+	each let key, keys {
+		if Obj:has(result, key) {
+			let arr1 = result[key]
+			let arr2 = chain2[key]
+			each let item, arr2 {
+				arr1.push(item)
+			}
+			result[key] = arr1
+		} else {
+			result[key] = chain2[key]
+		}
+	}
+
+	return result
+}
+
+// 開始キーを選択（なるべく文の始まりっぽいもの）
+@select_start_key(keys) {
+	var good_starts = []
+
+	each let key, keys {
+		let first_char = key.to_arr().at(0)
+		// 大文字や日本語で始まるものを優先
+		if first_char != " " && first_char != "、" && first_char != "。" {
+			good_starts.push(key)
+		}
+	}
+
+	if good_starts.len > 0 {
+		return good_starts.at(Math:rnd(0, good_starts.len - 1))
+	} else {
+		return keys.at(Math:rnd(0, keys.len - 1))
+	}
+}
+
+// 文章生成
+@generate_text(chain, order, max_len, min_len, use_words) {
+	let keys = Obj:keys(chain)
+
+	if keys.len == 0 {
+		return "⚠️ 学習データが不足しています"
+	}
+
+	// 開始キーを選択
+	let start_key = select_start_key(keys)
+	var tokens = start_key.split("│")
+
+	var current_key = start_key
+
+	// 文章を生成
+	for let i, max_len {
+		if !Obj:has(chain, current_key) {
+			break
+		}
+
+		let candidates = chain[current_key]
+		if candidates.len == 0 {
+			break
+		}
+
+		// 次のトークンを選択
+		let next_token = candidates.at(Math:rnd(0, candidates.len - 1))
+		tokens.push(next_token)
+
+		// 次のキーを作成
+		if tokens.len >= order {
+			var key_parts = []
+			for let j, order {
+				let idx = tokens.len - order + j
+				key_parts.push(tokens.at(idx))
+			}
+			current_key = key_parts.join("│")
+		}
+
+		// 終了条件：句点で終わる
+		let is_end = (next_token == "。" || next_token == "！" || next_token == "？" ||
+		              next_token == "." || next_token == "!" || next_token == "?")
+
+		if is_end {
+			let result_text = if use_words tokens.join(" ") else tokens.join("")
+			if result_text.len >= min_len {
+				break
+			}
+		}
+	}
+
+	// トークンを結合
+	let result = if use_words tokens.join(" ") else tokens.join("")
+	return result
+}
+
+// ============================================
+// メイン処理
+// ============================================
+
+log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+log("📚 マルコフ連鎖文章生成スクリプト")
+log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+log("")
+
+// 1. ノートを取得
+log(`📥 ノートを取得中... (最大 {CONFIG.fetch_limit} 件)`)
+
+let notes = Mk:api("i/notes", {
+	limit: CONFIG.fetch_limit
+})
+
+if Core:type(notes) == "error" {
+	log(`❌ エラー: {notes.name}`)
+	log("💡 このスクリプトはMisskey Playで実行してください")
+	Core:abort("API呼び出しエラー")
+}
+
+log(`✅ {notes.len} 件のノートを取得しました`)
+log("")
+
+// 2. マルコフチェーン構築
+log("🔨 マルコフチェーンを構築中...")
+
+var global_chain = {}
+var processed_count = 0
+
+each let note, notes {
+	if Core:type(note) == "obj" {
+		if note["text"] != null {
+			let text = note["text"]
+
+			if text.len >= CONFIG.min_length {
+				let cleaned = clean_note_text(text)
+
+				if cleaned.len >= CONFIG.min_length {
+					let tokens = tokenize(cleaned, CONFIG.use_word_tokens)
+					let chain = build_chain(tokens, CONFIG.markov_order)
+					global_chain = merge_chains(global_chain, chain)
+					processed_count = processed_count + 1
+				}
+			}
+		}
+	}
+}
+
+let chain_size = Obj:keys(global_chain).len
+
+log(`✅ {processed_count} 件のノートから {chain_size} 個の状態を学習`)
+log("")
+
+// 3. 文章生成
+log("✨ 文章を生成します...")
+log("")
+log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+for let i, CONFIG.generate_count {
+	log("")
+
+	let generated = generate_text(
+		global_chain
+		CONFIG.markov_order
+		CONFIG.max_length
+		CONFIG.min_length
+		CONFIG.use_word_tokens
+	)
+
+	log(`【{i + 1}】 {generated}`)
+}
+
+log("")
+log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+log("")
+log("✅ 生成完了！")
+log("")
+log("💡 ヒント:")
+log("  - もっと自然な文章にしたい → ノートをもっと投稿しましょう")
+log("  - 設定を変更したい → CONFIG変数を編集してください")
+log("")
+log("⚠️ 注意:")
+log("  生成された文章はあなたの文体を模倣していますが、")
+log("  実際のあなたの発言ではありません。")

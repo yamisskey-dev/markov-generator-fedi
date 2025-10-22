@@ -17,7 +17,7 @@ def dict_factory(cursor, row):
 class DatabaseManager:
     """データベース操作を管理するクラス"""
     
-    def __init__(self, db_path: str = 'markov.db'):
+    def __init__(self, db_path: str = '/data/markov.db'):
         self.db_path = db_path
         self.connection = sqlite3.connect(db_path, check_same_thread=False)
         self.connection.row_factory = dict_factory

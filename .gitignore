@@ -1,6 +1,8 @@
-config*.py
+config.py
 __pycache__
 *.json
-*.txt
 *.db
 venv/*
+
+# ただしrequirements.txtは含める
+!requirements.txt
